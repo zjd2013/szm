@@ -20,16 +20,19 @@ export type ConstituentRole =
 
 export interface NounEntry {
   word: string;
+  headWord?: string;
   initials: string;
   tags: SemTag[];
   vibe: StyleVibe;
   weight: number;
   isPronoun?: boolean;
+  subjectOnly?: boolean;
   synthetic?: boolean;
 }
 
 export interface VerbEntry {
   word: string;
+  coreVerb?: string;
   initials: string;
   transitive: boolean;
   intransitive: boolean;
@@ -37,6 +40,7 @@ export interface VerbEntry {
   oTags: SemTag[];
   vibe: StyleVibe;
   weight: number;
+  psych?: boolean;
   synthetic?: boolean;
 }
 
@@ -92,6 +96,7 @@ export interface PhraseSegment {
   shortLabel: '语' | '主' | '谓' | '宾';
   word: string;
   chars: AnnotatedChar[];
+  clauseBreakAfter?: boolean;
 }
 
 export interface GeneratedPhrase {

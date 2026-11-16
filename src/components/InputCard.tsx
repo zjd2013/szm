@@ -21,7 +21,7 @@ export const InputCard: React.FC<InputCardProps> = ({
   placeholder,
 }) => {
   const isA = slot === 'A';
-  const charCount = Array.from(value.trim()).length;
+  const charCount = Array.from(value.replace(/\s+/g, '')).length;
 
   const badgeBg = isA
     ? 'bg-amber-700 text-white'
@@ -48,19 +48,19 @@ export const InputCard: React.FC<InputCardProps> = ({
           <span className="text-sm font-semibold text-stone-800">
             字符串 {slot}
           </span>
-          <span className="text-xs text-stone-400">（2–3 个汉字或字母）</span>
+          <span className="text-xs text-stone-400">（汉字或字母，不限 2–3 字）</span>
         </div>
 
         <div className="flex items-center gap-1.5">
           {parsed.valid ? (
             <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2 py-0.5 text-xs font-medium text-emerald-700 border border-emerald-200/70">
               <CheckCircle2 className="h-3.5 w-3.5" />
-              长度 {charCount}
+              {charCount} 字
             </span>
           ) : (
             <span className="inline-flex items-center gap-1 rounded-full bg-rose-50 px-2 py-0.5 text-xs font-medium text-rose-700 border border-rose-200/70">
               <AlertCircle className="h-3.5 w-3.5" />
-              {charCount}/2~3
+              {charCount === 0 ? '待输入' : `${charCount} 字`}
             </span>
           )}
         </div>

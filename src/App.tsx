@@ -27,27 +27,29 @@ interface PresetPair {
 const PRESETS: PresetPair[] = [
   { label: '周杰伦 + 昆凌', a: '周杰伦', b: '昆凌' },
   { label: 'zjd + szm', a: 'zjd', b: 'szm' },
+  { label: '我 + 爱你', a: '我', b: '爱你' },
   { label: '春风 + 晚星', a: '春风', b: '晚星' },
   { label: '小猫 + 奶茶', a: '小猫', b: '奶茶' },
-  { label: '摸鱼 + 下班', a: '摸鱼', b: '下班' },
-  { label: '音乐 + 快乐', a: '音乐', b: '快乐' },
-  { label: '张三 + 李四', a: '张三', b: '李四' },
+  { label: '今天 + 不想上班', a: '今天', b: '不想上班' },
+  { label: '恭喜发财 + 万事如意', a: '恭喜发财', b: '万事如意' },
 ];
 
 const RANDOM_POOL: [string, string][] = [
   ['星河', '少年'],
   ['火锅', '快乐'],
   ['海鸥', '晚霞'],
-  ['侦探', '猫咪'],
+  ['小猫', '奶茶'],
   ['白鹿', '长安'],
   ['锦鲤', '好运'],
   ['可乐', '炸鸡'],
-  ['剑客', '江湖'],
+  ['今天', '不想上班'],
   ['宇航员', '月亮'],
   ['小猫咪', '晒太阳'],
   ['打工人', '喝咖啡'],
-  ['xsw', 'yyd'],
-  ['aw', 'sl'],
+  ['恭喜发财', '万事如意'],
+  ['春风十里', '桃花'],
+  ['我', '想下班'],
+  ['xswl', 'yyds'],
   ['klm', 'xzy'],
 ];
 
@@ -410,10 +412,10 @@ export const App: React.FC = () => {
             <div className="rounded-2xl border border-dashed border-stone-300 bg-white/60 p-10 text-center">
               <BookOpen className="mx-auto h-8 w-8 text-stone-400" />
               <p className="mt-3 text-sm font-semibold text-stone-700">
-                请在上方输入两个长度为 2 或 3 的字符串
+                请在上方输入两个汉字或字母字符串（不限 2–3 字）
               </p>
               <p className="mt-1 text-xs text-stone-500">
-                支持中文词语/姓名（如「周杰伦」「昆凌」）或首字母缩写（如「zjd」「szm」）
+                支持单字、词语、短句或首字母缩写（如「我 + 爱你」「周杰伦 + 昆凌」「今天 + 不想上班」「zjd + szm」）
               </p>
             </div>
           ) : phrases.length === 0 ? (
