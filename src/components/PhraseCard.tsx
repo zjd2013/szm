@@ -156,57 +156,68 @@ export const PhraseCard: React.FC<PhraseCardProps> = ({
         {phrase.segments.map((seg, sIdx) => {
           const roleStyle = ROLE_STYLES[seg.role];
           return (
-            <div key={sIdx} className="flex flex-col items-center">
-              <div className="flex items-end gap-1 sm:gap-1.5">
-                {seg.chars.map((c, cIdx) => {
-                  const isSourceA = c.source === 'A';
-                  return (
-                    <div
-                      key={cIdx}
-                      className="flex flex-col items-center min-w-[2.1rem]"
-                    >
-                      {/* 顶层：首字母来源徽标（A琥珀色 / B青黛色） */}
-                      <span
-                        className={`mb-0.5 inline-flex h-5 min-w-5 items-center justify-center rounded px-1 font-mono text-[11px] font-bold uppercase ${
-                          isSourceA
-                            ? 'bg-amber-700/90 text-white'
-                            : 'bg-teal-700/90 text-white'
-                        }`}
-                        title={`来自字符串 ${c.source} · 首字母 ${c.initial.toUpperCase()}`}
+            <React.Fragment key={sIdx}>
+              <div className="flex flex-col items-center">
+                <div className="flex items-end gap-1 sm:gap-1.5">
+                  {seg.chars.map((c, cIdx) => {
+                    const isSourceA = c.source === 'A';
+                    return (
+                      <div
+                        key={cIdx}
+                        className="flex flex-col items-center min-w-[2.1rem]"
                       >
-                        {c.initial}
-                      </span>
-                      {/* 中层：完整声调拼音 */}
-                      <span className="text-[11px] font-mono text-stone-400 leading-tight">
-                        {c.pinyin}
-                      </span>
-                      {/* 底层：汉字本体 */}
-                      <span
-                        className={`mt-0.5 font-bold tracking-wide text-stone-900 ${
-                          featured
-                            ? 'text-2xl sm:text-3xl'
-                            : 'text-xl sm:text-2xl'
-                        }`}
-                      >
-                        {c.char}
-                      </span>
-                    </div>
-                  );
-                })}
-              </div>
+                        {/* 顶层：首字母来源徽标（A琥珀色 / B青黛色） */}
+                        <span
+                          className={`mb-0.5 inline-flex h-5 min-w-5 items-center justify-center rounded px-1 font-mono text-[11px] font-bold uppercase ${
+                            isSourceA
+                              ? 'bg-amber-700/90 text-white'
+                              : 'bg-teal-700/90 text-white'
+                          }`}
+                          title={`来自字符串 ${c.source} · 首字母 ${c.initial.toUpperCase()}`}
+                        >
+                          {c.initial}
+                        </span>
+                        {/* 中层：完整声调拼音 */}
+                        <span className="text-[11px] font-mono text-stone-400 leading-tight">
+                          {c.pinyin}
+                        </span>
+                        {/* 底层：汉字本体 */}
+                        <span
+                          className={`mt-0.5 font-bold tracking-wide text-stone-900 ${
+                            featured
+                              ? 'text-2xl sm:text-3xl'
+                              : 'text-xl sm:text-2xl'
+                          }`}
+                        >
+                          {c.char}
+                        </span>
+                      </div>
+                    );
+                  })}
+                </div>
 
-              {/* 语法成分下划线与标签 */}
-              <div className="mt-1.5 flex w-full flex-col items-center">
-                <div
-                  className={`h-1 w-full rounded-full opacity-80 ${roleStyle.underline}`}
-                />
-                <span
-                  className={`mt-1 inline-flex items-center rounded border px-1.5 py-0.2 text-[10px] font-semibold ${roleStyle.badge}`}
-                >
-                  {seg.roleLabel}：{seg.word}
-                </span>
+                {/* 语法成分下划线与标签 */}
+                <div className="mt-1.5 flex w-full flex-col items-center">
+                  <div
+                    className={`h-1 w-full rounded-full opacity-80 ${roleStyle.underline}`}
+                  />
+                  <span
+                    className={`mt-1 inline-flex items-center rounded border px-1.5 py-0.2 text-[10px] font-semibold ${roleStyle.badge}`}
+                  >
+                    {seg.roleLabel}：{seg.word}
+                  </span>
+                </div>
               </div>
-            </div>
+              {seg.clauseBreakAfter && (
+                <span
+                  className={`self-center pb-3 font-bold text-stone-400 ${
+                    featured ? 'text-2xl sm:text-3xl' : 'text-xl sm:text-2xl'
+                  }`}
+                >
+                  ，
+                </span>
+              )}
+            </React.Fragment>
           );
         })}
       </div>
