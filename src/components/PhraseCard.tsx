@@ -3,6 +3,7 @@ import { Check, Copy, Sparkles } from 'lucide-react';
 import {
   ConstituentRole,
   GeneratedPhrase,
+  QualityTier,
   StyleVibe,
 } from '../engine/types';
 
@@ -19,6 +20,11 @@ const ROLE_STYLES: Record<
     badge: 'bg-emerald-100 text-emerald-800 border-emerald-200',
     box: 'bg-emerald-50/60 border-emerald-200/80 text-emerald-950',
     underline: 'bg-emerald-500',
+  },
+  adverb: {
+    badge: 'bg-violet-100 text-violet-800 border-violet-200',
+    box: 'bg-violet-50/60 border-violet-200/80 text-violet-950',
+    underline: 'bg-violet-500',
   },
   predicate: {
     badge: 'bg-amber-100 text-amber-900 border-amber-300',
@@ -37,6 +43,13 @@ const ROLE_STYLES: Record<
   },
 };
 
+const TIER_STYLES: Record<QualityTier, string> = {
+  3: 'bg-rose-700 text-white border-rose-700 shadow-2xs',
+  2: 'bg-emerald-50 text-emerald-800 border-emerald-200',
+  1: 'bg-amber-50 text-amber-800 border-amber-200',
+  0: 'bg-stone-100 text-stone-500 border-stone-200',
+};
+
 const VIBE_LABELS: Record<StyleVibe, { label: string; style: string }> = {
   daily: {
     label: '日常自然',
@@ -51,6 +64,19 @@ const VIBE_LABELS: Record<StyleVibe, { label: string; style: string }> = {
     style: 'bg-orange-50 text-orange-700 border-orange-200',
   },
 };
+
+/**
+ * 将带声调拼音的首字母（含 NFD 组合声调符，如 ài 的 à）拆出以便高亮展示
+ */
+function splitInitialPinyin(py: string): [string, string] {
+  if (!py) return ['', ''];
+  const nfd = py.normalize('NFD');
+  let n = 1;
+  while (n < nfd.length && /[\u0300-\u036f]/.test(nfd[n])) {
+    n++;
+  }
+  return [nfd.slice(0, n).normalize('NFC'), nfd.slice(n).normalize('NFC')];
+}
 
 interface PhraseCardProps {
   phrase: GeneratedPhrase;
@@ -67,9 +93,9 @@ export const PhraseCard: React.FC<PhraseCardProps> = ({
     const content =
       mode === 'plain'
         ? phrase.text
-        : `${phrase.text}（${phrase.initials.toUpperCase()} · ${
-            phrase.segments.map((s) => `${s.shortLabel}:${s.word}`).join(' ')
-          }）`;
+        : `${phrase.text}（${phrase.tierLabel} · ${phrase.initials.toUpperCase()} · ${phrase.segments
+            .map((s) => `${s.shortLabel}:${s.word}`)
+            .join(' ')}）`;
     try {
       await navigator.clipboard.writeText(content);
       setCopiedMode(mode);
@@ -80,6 +106,7 @@ export const PhraseCard: React.FC<PhraseCardProps> = ({
   };
 
   const vibeMeta = VIBE_LABELS[phrase.vibe];
+  const tierStyle = TIER_STYLES[phrase.tier];
 
   return (
     <div
@@ -98,6 +125,12 @@ export const PhraseCard: React.FC<PhraseCardProps> = ({
               首选推荐
             </span>
           )}
+          <span
+            title={phrase.tierDesc}
+            className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[11px] font-bold cursor-help ${tierStyle}`}
+          >
+            {phrase.tierLabel}
+          </span>
           <span
             className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[11px] font-semibold ${
               phrase.order === 'AB'
@@ -139,7 +172,7 @@ export const PhraseCard: React.FC<PhraseCardProps> = ({
           <button
             type="button"
             onClick={() => handleCopy('detail')}
-            title="连同首字母与语法标注一起复制"
+            title="连同语料评级、首字母与语法标注一起复制"
             className="hidden sm:inline-flex items-center gap-1 rounded-lg border border-stone-200 bg-white px-2 py-1 text-xs text-stone-500 hover:bg-stone-50 hover:text-stone-800 transition-colors cursor-pointer"
           >
             {copiedMode === 'detail' ? (
@@ -161,6 +194,7 @@ export const PhraseCard: React.FC<PhraseCardProps> = ({
                 <div className="flex items-end gap-1 sm:gap-1.5">
                   {seg.chars.map((c, cIdx) => {
                     const isSourceA = c.source === 'A';
+                    const [pyHead, pyRest] = splitInitialPinyin(c.pinyin);
                     return (
                       <div
                         key={cIdx}
@@ -177,9 +211,12 @@ export const PhraseCard: React.FC<PhraseCardProps> = ({
                         >
                           {c.initial}
                         </span>
-                        {/* 中层：完整声调拼音 */}
-                        <span className="text-[11px] font-mono text-stone-400 leading-tight">
-                          {c.pinyin}
+                        {/* 中层：完整声调拼音（高亮首字母） */}
+                        <span className="text-[11px] font-mono text-stone-400 leading-tight whitespace-nowrap">
+                          <b className="font-extrabold text-rose-700">
+                            {pyHead}
+                          </b>
+                          {pyRest}
                         </span>
                         {/* 底层：汉字本体 */}
                         <span
@@ -245,6 +282,9 @@ export const PhraseCard: React.FC<PhraseCardProps> = ({
             ({phrase.firstSource}+{phrase.secondSource})
           </span>
         </div>
+        <span className="text-[11px] text-stone-400 hidden sm:inline">
+          {phrase.tierDesc}
+        </span>
       </div>
     </div>
   );

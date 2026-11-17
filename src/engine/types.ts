@@ -1,22 +1,24 @@
 export type SemTag =
-  | 'person'   // 人物/角色/代词：我、你、少年、少主、神仙、老板
-  | 'animal'   // 动物/萌宠：小猫、狮子、海鸥、白鹿、企鹅
-  | 'food'     // 固体食物：火锅、西瓜、鸡蛋、莲藕、炸鸡
-  | 'drink'    // 饮品/汤酒：奶茶、可乐、咖啡、清茶、美酒
-  | 'nature'   // 自然/风物：春风、月亮、星河、桃花、山海
-  | 'item'     // 器物/物件：吉他、宝剑、灯笼、单车、雨伞
-  | 'text'     // 文本/文艺载体：情书、字谜、故事、诗篇、日记
-  | 'place'    // 场所/空间/界面：桌面、人间、江南、窗台、炸鸡店
-  | 'abstract'; // 情感/时间/抽象：梦想、温柔、青春、欧气、秘密
+  | 'person'
+  | 'animal'
+  | 'food'
+  | 'drink'
+  | 'nature'
+  | 'item'
+  | 'text'
+  | 'place'
+  | 'abstract';
 
 export type StyleVibe = 'daily' | 'poetic' | 'funny';
 
-export type ConstituentRole =
-  | 'modal_init'
-  | 'subject'
-  | 'predicate'
-  | 'object'
-  | 'modal_end';
+/**
+ * 语料搭配真实度四级评定（借鉴并升级自 602 万影视字幕依存句法模型）：
+ * 3 = 地道（整组搭配在真实语料/精选现代语料中多次出现）
+ * 2 = 通顺（各组搭配分别出现过，或有细粒度同类词搭配佐证）
+ * 1 = 勉强（搭配得到粗粒度语义类别间接支持）
+ * 0 = 硬凑（仅保证语法结构与首字母准确，兜底生成）
+ */
+export type QualityTier = 0 | 1 | 2 | 3;
 
 export interface NounEntry {
   word: string;
@@ -60,28 +62,33 @@ export interface ModifierEntry {
   weight: number;
 }
 
-export interface CharAnalysis {
+export interface ParsedCharToken {
   index: number;
   rawChar: string;
   isChinese: boolean;
-  isAlpha: boolean;
-  defaultInitial: string;
-  selectedInitial: string;
-  altInitials: string[]; // 多音字候选首字母
   pinyinDisplay: string;
-  mappedFromIUV?: 'i' | 'u' | 'v';
+  selectedInitial: string;
+  altInitials: string[];
+  mappedFromIUV?: string;
 }
 
 export interface ParsedStringInput {
   raw: string;
-  trimmed: string;
   valid: boolean;
   error?: string;
-  chars: CharAnalysis[];
+  chars: ParsedCharToken[];
   initials: string;
-  hasIUV: boolean;
   hasPolyphone: boolean;
+  hasIUV: boolean;
 }
+
+export type ConstituentRole =
+  | 'modal_init'
+  | 'subject'
+  | 'adverb'
+  | 'predicate'
+  | 'object'
+  | 'modal_end';
 
 export interface AnnotatedChar {
   char: string;
@@ -92,8 +99,8 @@ export interface AnnotatedChar {
 
 export interface PhraseSegment {
   role: ConstituentRole;
-  roleLabel: '语气词' | '主语' | '谓语' | '宾语';
-  shortLabel: '语' | '主' | '谓' | '宾';
+  roleLabel: '语气词' | '主语' | '状语' | '谓语' | '宾语';
+  shortLabel: '语' | '主' | '状' | '谓' | '宾';
   word: string;
   chars: AnnotatedChar[];
   clauseBreakAfter?: boolean;
@@ -105,19 +112,31 @@ export interface GeneratedPhrase {
   initials: string;
   order: 'AB' | 'BA';
   orderLabel: string;
-  sourceSplitIndex: number; // 前 sourceSplitIndex 个字对应第一个拼接串
+  sourceSplitIndex: number;
   firstSource: 'A' | 'B';
   secondSource: 'A' | 'B';
-  patternCode: string;      // 如 "SVO", "SVOM", "SV", "VO", "VOM", "MSVO"
-  patternLabel: string;     // 如 "主 + 谓 + 宾", "主 + 谓 + 宾 + 语气词"
+  patternCode: string;
+  patternLabel: string;
   hasSubject: boolean;
   hasObject: boolean;
+  hasAdverb?: boolean;
   hasModal: boolean;
+  tier: QualityTier;
+  tierLabel: '地道' | '通顺' | '勉强' | '硬凑';
+  tierDesc: string;
   vibe: StyleVibe;
   score: number;
   segments: PhraseSegment[];
 }
 
 export type OrderFilter = 'all' | 'AB' | 'BA';
-export type StructureFilter = 'all' | 'full_svo' | 'compact' | 'with_modal';
-export type VibeFilter = 'all' | StyleVibe;
+export type StructureFilter =
+  | 'all'
+  | 'SVO'
+  | 'SV'
+  | 'VO'
+  | 'V'
+  | 'full_svo'
+  | 'compact'
+  | 'with_modal';
+export type VibeFilter = 'all' | 'daily' | 'poetic' | 'funny';
