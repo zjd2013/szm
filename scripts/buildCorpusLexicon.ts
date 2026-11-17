@@ -10,28 +10,31 @@ const SRC_HTML = '/tmp/cp-gen/index.html';
 const OUT_CORPUS = path.resolve('public/corpus.bin');
 const OUT_CHARMAP = path.resolve('src/engine/charmapData.json');
 
-const html = fs.readFileSync(SRC_HTML, 'utf8');
-const dataMatch = html.match(/id="data">([^<]+)<\/script>/);
-const cmMatch = html.match(/id="charmap">([^<]+)<\/script>/);
-if (!dataMatch || !cmMatch) {
-  throw new Error('Failed to extract data/charmap from CP-generator');
+let D: any;
+if (fs.existsSync(SRC_HTML)) {
+  const html = fs.readFileSync(SRC_HTML, 'utf8');
+  const dataMatch = html.match(/id="data">([^<]+)<\/script>/);
+  const cmMatch = html.match(/id="charmap">([^<]+)<\/script>/);
+  if (!dataMatch || !cmMatch) {
+    throw new Error('Failed to extract data/charmap from CP-generator');
+  }
+  D = JSON.parse(
+    zlib.gunzipSync(Buffer.from(dataMatch[1].trim(), 'base64')).toString('utf8')
+  );
+  const CM = JSON.parse(cmMatch[1]);
+  fs.mkdirSync(path.dirname(OUT_CHARMAP), { recursive: true });
+  fs.writeFileSync(OUT_CHARMAP, JSON.stringify(CM));
+} else {
+  D = JSON.parse(zlib.gunzipSync(fs.readFileSync(OUT_CORPUS)).toString('utf8'));
 }
-
-const D = JSON.parse(
-  zlib.gunzipSync(Buffer.from(dataMatch[1].trim(), 'base64')).toString('utf8')
-);
-const CM = JSON.parse(cmMatch[1]);
-
-fs.mkdirSync(path.dirname(OUT_CHARMAP), { recursive: true });
-fs.writeFileSync(OUT_CHARMAP, JSON.stringify(CM));
 
 console.log(
   `Base corpus loaded: W=${D.W.length}, SV=${D.SV.length}, VO=${D.VO.length}, SVO=${D.SVO.length}`
 );
 
-// ==================== 1. 清洗字幕脏词/低俗词 & 修正误标专名 (nr=1) ====================
+// ==================== 1. 清洗字幕脏词/低俗词/刑侦疾病晦气词 & 修正误标专名 (nr=1) ====================
 const BAD_WORD_RE =
-  /屁|屎|尿|粪|婊|妓|娼|奸|淫|荡妇|蠢货|混蛋|王八|妈的|他妈|狗娘|杂种|白痴|傻逼|智障|死尸|尸体|自杀|谋杀|杀害|毒贩|海洛因|可卡因|毒品|吸毒|流氓|变态|呕吐|生殖|阴茎|阴道|乳房|裸体|做爱|上床|甚么/;
+  /屁|屎|尿|粪|婊|妓|娼|奸|淫|荡妇|蠢货|混蛋|王八|妈的|他妈|狗娘|杂种|白痴|傻逼|智障|死尸|尸体|自杀|自尽|自残|跳河|跳楼|上吊|谋杀|杀害|凶手|杀手|毒贩|海洛因|可卡因|毒品|吸毒|流氓|变态|呕吐|生殖|阴茎|阴道|乳房|裸体|做爱|上床|甚么|败血|白血病|癌症|肿瘤|心脏病|精神病|吸血鬼|罪犯|犯罪|认罪|有罪|罪名|罪行|监狱|坐牢|出狱|赌场|报仇|复仇|仇恨|憎恨|痛恨|血迹|玩意|事物|此事|某事/;
 
 const COMMON_FALSE_NR = new Set([
   '月亮', '玫瑰', '巧克力', '汉堡', '小狗', '金子', '珠宝', '屋顶', '外星人', '台词',
@@ -670,6 +673,157 @@ D.P = Object.assign({}, D.P, {
   行吧: 12600,
   行吗: 11200,
 });
+
+// 同步补充现代网络/日常高频词与萌宠搭配（避免影视字幕缺失导致地道表达被评为硬凑）
+upsertWord('网友', { cs: 900, co: 1200, k0: CLUSTERS.FRIEND[0], k1: CLUSTERS.FRIEND[1] });
+upsertWord('小猪', { cs: 650, co: 950, k0: CLUSTERS.PET[0], k1: CLUSTERS.PET[1] });
+upsertWord('小羊', { cs: 550, co: 800, k0: CLUSTERS.PET[0], k1: CLUSTERS.PET[1] });
+upsertWord('小鸭', { cs: 550, co: 800, k0: CLUSTERS.PET[0], k1: CLUSTERS.PET[1] });
+for (const pet of ['小猫', '小狗', '小猪', '小羊', '小鸭', '猫咪', '柴犬', '考拉', '熊猫', '兔子', '锦鲤', '鱼', '鸭', '羊', '猫', '狗']) {
+  for (const pv of ['抱', '喂', '养', '撸', '哄', '宠', '看', '抓', '追', '喜欢']) {
+    addVO(pv, pet, 65);
+  }
+}
+for (const netV of ['追', '找', '见', '约', '加', '聊', '认识', '喜欢']) {
+  addVO(netV, '网友', 60);
+}
+for (const subj of ['我', '你', '他', '她', '我们', '学长', '学姐', '闺蜜', '室友', '少年', '少女']) {
+  for (const pv of ['抱', '喂', '养', '撸', '哄', '宠', '追', '找']) {
+    addSV(subj, pv, 80, 30);
+  }
+}
+
+// ==================== 8. 深度清洗字幕依存句法截断造成的“伪动宾/伪主谓”脏边 ====================
+const ALLOWED_MONO_V_WITH_SHI = new Set([
+  '有', '没', '做', '干', '办', '出', '找', '管', '懂', '省', '来', '生', '怕', '问', '说', '谈', '讲', '坏', '成', '完',
+]);
+const ALLOWED_DI_V_WITH_SHI = new Set(['做好', '做坏', '没有']);
+
+const COPULA_STRIPPED_OBJS = new Set([
+  '意思', '事', '地方', '主意', '原因', '名字', '人员', '人口', '人类', '群众', '队伍',
+  '玩意', '事物', '情况', '时候', '样子', '方面', '程度', '部分', '内容', '结果',
+]);
+
+const SEMI_BOUND_MONO_OBJS = new Set([
+  '库', '营', '局', '部', '科', '处', '品', '员', '方', '度', '性', '色', '感', '况', '态', '界', '派', '系', '率', '量',
+]);
+
+const PURE_ADJECTIVES_NO_OBJ = new Set([
+  '薄', '厚', '冷', '热', '大', '小', '高', '低', '长', '短', '宽', '窄', '胖', '瘦', '美', '丑',
+  '快', '慢', '干', '湿', '软', '硬', '亮', '暗', '轻', '重', '贵', '穷', '富', '甜', '苦', '辣', '咸', '酸',
+]);
+for (const adj of PURE_ADJECTIVES_NO_OBJ) {
+  const idx = wordIdx.get(adj);
+  if (idx != null && adj !== '干') {
+    D.W[idx][4] = 0; // 纯性质形容词不可带宾语（拦截“剪贴薄先生吧”）
+  }
+}
+
+const PHYS_CONSUME_BUY_VERBS = new Set([
+  '吃', '喝', '买', '卖', '洗', '煮', '烤', '炸', '炒', '切', '削', '吞', '嚼', '穿', '戴', '脱', '拆', '修', '烧', '砸',
+  '吃掉', '喝掉', '买下', '卖掉', '洗净', '烧掉', '煮熟', '切开',
+]);
+
+const HUMAN_OR_COLOR_BAD_OBJS = new Set([
+  '我', '你', '他', '她', '您', '咱们', '我们', '你们', '他们', '她们', '谁', '人',
+  '孩子', '小孩', '宝宝', '儿子', '女儿', '老婆', '老公', '妻子', '丈夫',
+  '爸', '妈', '哥', '姐', '弟', '妹', '爸爸', '妈妈', '哥哥', '姐姐', '弟弟', '妹妹',
+  '老师', '医生', '警察', '律师', '朋友', '同学', '闺蜜', '室友', '同事', '老板', '男人', '女人', '男孩', '女孩',
+  '黄色', '红色', '蓝色', '绿色', '白色', '黑色', '紫色', '粉色', '灰色', '彩色', '颜色',
+]);
+
+const PSYCH_PREDICATES = new Set([
+  '不解', '疑惑', '困惑', '满意', '失望', '生气', '伤心', '难过', '后悔', '害怕', '担心',
+  '骄傲', '自豪', '羡慕', '嫉妒', '开心', '高兴', '快乐', '难受', '委屈', '着急', '紧张', '郁闷', '兴奋',
+]);
+const INANIMATE_BAD_PSYCH_SUBJS = new Set([
+  '事', '事情', '话', '书', '钱', '水', '车', '房', '房子', '问题', '消息', '结果', '证据', '衣服', '鞋', '菜', '饭',
+]);
+
+const SPECIFIC_BAD_VO = new Set([
+  '写|话', '想|话', '喝|歌', '喝|曲', '说|意思', '讲|意思', '救|生活', '想|手', '送|人', '伤|人',
+  '离开|路', '离开|街', '追|街', '说|我们', '说|你们',
+]);
+
+function isBadVOEdge(vw: string, ow: string): boolean {
+  if (SPECIFIC_BAD_VO.has(`${vw}|${ow}`)) return true;
+  if (ow === '事') {
+    const vLen = Array.from(vw).length;
+    if (vLen === 1) return !ALLOWED_MONO_V_WITH_SHI.has(vw);
+    return !ALLOWED_DI_V_WITH_SHI.has(vw);
+  }
+  if ((vw === '做' || vw === '当') && /[部局科处厅院委会室组队]$/.test(ow) && ow.length >= 2) {
+    return true; // 拦截“做文艺部”（实为“做文艺部部长”截断）
+  }
+  if (vw === '是' && COPULA_STRIPPED_OBJS.has(ow)) return true;
+  if (SEMI_BOUND_MONO_OBJS.has(ow)) return true;
+  if (PHYS_CONSUME_BUY_VERBS.has(vw) && HUMAN_OR_COLOR_BAD_OBJS.has(ow)) return true;
+  if (vw === '喝' && !/水|茶|酒|奶|汤|粥|汁|饮|可乐|咖啡|拿铁|雪碧|汽水|豆浆|药|露|啤/.test(ow)) {
+    return true; // “喝”只接饮品流体，彻底杜绝“喝歌”等字幕错字噪声
+  }
+  if (vw === '烧' && (ow === '老鼠' || ow === '猫' || ow === '狗')) return true;
+  if ((vw === '告诉' || vw === '知道' || vw === '属于') && ow === '人') return true;
+  if (vw === '喜欢' && ow === '歌') return true;
+  return false;
+}
+
+function isBadSVEdge(sw: string, vw: string): boolean {
+  if (PSYCH_PREDICATES.has(vw) && INANIMATE_BAD_PSYCH_SUBJS.has(sw)) return true;
+  if (BAD_WORD_RE.test(sw) || BAD_WORD_RE.test(vw)) return true;
+  return false;
+}
+
+const beforeVO = D.VO.length;
+const beforeSV = D.SV.length;
+const beforeSVO = D.SVO.length;
+
+D.VO = D.VO.filter((p: number[]) => {
+  const vwRec = D.W[p[0]];
+  const owRec = D.W[p[1]];
+  if (!vwRec || !owRec || vwRec[4] <= 0 || owRec[5] <= 0) return false;
+  const vw = vwRec[0] as string;
+  const ow = owRec[0] as string;
+  if (BAD_WORD_RE.test(vw) || BAD_WORD_RE.test(ow)) return false;
+  return !isBadVOEdge(vw, ow);
+});
+
+D.SV = D.SV.filter((p: number[]) => {
+  const swRec = D.W[p[0]];
+  const vwRec = D.W[p[1]];
+  if (!swRec || !vwRec || swRec[2] <= 0 || (vwRec[3] <= 0 && vwRec[4] <= 0)) {
+    return false;
+  }
+  const sw = swRec[0] as string;
+  const vw = vwRec[0] as string;
+  return !isBadSVEdge(sw, vw);
+});
+
+D.SVO = D.SVO.filter((p: number[]) => {
+  const sw = D.W[p[0]][0] as string;
+  const vw = D.W[p[1]][0] as string;
+  const ow = D.W[p[2]][0] as string;
+  if (BAD_WORD_RE.test(sw) || BAD_WORD_RE.test(vw) || BAD_WORD_RE.test(ow)) return false;
+  return !isBadSVEdge(sw, vw) && !isBadVOEdge(vw, ow);
+});
+
+// 同步屏蔽集合名词“人员”作为普通宾语被泛化匹配
+for (const badObj of ['人员', '玩意', '事物', '此事', '某事']) {
+  const idx = wordIdx.get(badObj);
+  if (idx != null) {
+    D.W[idx][5] = 0;
+  }
+}
+for (const sb of SEMI_BOUND_MONO_OBJS) {
+  const idx = wordIdx.get(sb);
+  if (idx != null) {
+    D.W[idx][2] = 0;
+    D.W[idx][5] = 0;
+  }
+}
+
+console.log(
+  `Purged noisy dependency edges: SV ${beforeSV}->${D.SV.length}, VO ${beforeVO}->${D.VO.length}, SVO ${beforeSVO}->${D.SVO.length}`
+);
 
 console.log(
   `Upgraded corpus stats: W=${D.W.length}, SV=${D.SV.length}, VO=${D.VO.length}, SVO=${D.SVO.length}, AV=${Object.keys(D.AV).length}`

@@ -105,6 +105,49 @@ const PRONOUN_SET = new Set([
   '我们', '你们', '他们', '她们', '它们', '咱们', '大家', '自己',
 ]);
 
+// 必须带宾语才成句的动词（禁止生成“谁也是”“我也有”等无宾残句）
+const OBLIGATORY_OBJ_VERBS = new Set([
+  '是', '有', '没有', '没', '成为', '属于', '变成', '当作', '姓', '叫', '像', '不关', '在于', '等于',
+]);
+
+// 双音节动词后允许直接跟的自由单音节具体名物（拦截“商量事”“学会事”“还给库”等韵律残词）
+const FREE_MONO_NOUNS = new Set([
+  '人', '钱', '水', '饭', '菜', '茶', '酒', '肉', '鱼', '虾', '蛋', '糖', '药', '奶', '汤', '面', '粥', '饼',
+  '书', '歌', '话', '画', '花', '草', '树', '车', '船', '房', '家', '店', '猫', '狗', '马', '鸟', '牛', '羊', '猪',
+  '雨', '雪', '风', '云', '星', '海', '山', '河', '火', '光', '电', '路', '桥', '门', '窗', '墙', '床', '桌', '椅',
+  '灯', '伞', '包', '鞋', '衣', '帽', '表', '镜', '刀', '剑', '笔', '纸', '信', '琴', '棋', '球', '牌', '票', '课',
+  '班', '假', '觉', '梦', '礼', '奖', '福', '财', '运', '命', '心', '手', '脚', '头', '脸', '眼', '嘴', '泪', '汗',
+  '气', '力', '忙',
+]);
+
+// 不可修饰静态系动词“是/有/姓/叫”的动作/祈使/重复类状语
+const ACTION_ONLY_ADVS = new Set([
+  '再', '又', '先', '快', '去', '来', '别', '偷', '瞎', '乱', '少', '多', '早', '晚',
+  '快来', '快去', '不要', '正在', '顺便', '赶紧', '马上', '偷偷', '悄悄', '一起', '出去', '回家', '下班',
+]);
+
+// 程度副词（一般不用于“…吗”是非问句，不搭配疑问代词“谁”，及物时只修饰心理/情感动词）
+const DEGREE_ADVS = new Set([
+  '很', '太', '真', '超', '蛮', '挺', '最', '好', '够', '特别', '非常', '超级', '真的', '十分', '格外',
+]);
+
+// 允许受程度副词修饰并带宾语的心理/态度动词
+const DEGREE_TRANSITIVE_VERBS = new Set([
+  '爱', '想', '懂', '怕', '疼', '宠', '信', '服', '喜欢', '想念', '思念', '心疼', '羡慕', '偏爱', '钟意',
+  '期待', '佩服', '感激', '感谢', '讨厌', '害怕', '担心', '相信', '了解', '理解', '支持', '需要', '适合',
+  '值得', '欢迎', '吸引', '在乎', '介意', '满意', '珍惜', '尊重', '欣赏', '怀念', '依赖', '信任',
+]);
+
+// 表未然/意愿的状语，禁止直接冲突句尾完成态单字“了”
+const IRREALIS_ADVS = new Set([
+  '会', '要', '想', '能', '敢', '别', '不', '不想', '不要', '打算', '准备', '快来', '快去', '一起', '正在',
+]);
+
+// 通用吉言/独立成句祝福，允许在复句中自然衔接
+const BLESSING_CLAUSES = new Set([
+  '恭喜发财', '万事如意', '心想事成', '大吉大利', '天天开心', '前程似锦', '一路顺风', '平安喜乐', '早日暴富', '天气真好',
+]);
+
 const POETIC_RE =
   /春风|晚风|清风|微风|海风|秋风|星河|星辰|银河|星光|晚星|晚霞|月光|月色|月亮|日落|夕阳|烟花|山海|山河|人间|江南|长安|桃花|樱花|玫瑰|海棠|茉莉|白雪|雪花|偏爱|暗恋|想念|思念|拥抱|守护|微醺|心动|温柔|浪漫|治愈|拂|赏|吻|梦|诗/;
 const FUNNY_RE =
@@ -369,19 +412,19 @@ export function createCorpusEngine(D: RawCorpusData): CorpusEngineInstance {
   }
 
   const TIER_W = 4.5;
-  const STRONG = 4;
+  const STRONG = 12;
   const L_EXACT = 0.55;
   const L_K = [0.12, 0.25];
   const L_BASE = 0.08;
-  const MIN_C = [6, 4];
+  const MIN_C = [8, 5];
   const MIN_N = [3, 2];
   const MIN_LIFT = [3, 2];
 
-  function pSV(s: WordRec, v: WordRec, withObj: boolean): [number, QualityTier] {
+  function pSV(s: WordRec, v: WordRec, withObj: boolean): [number, QualityTier, number] {
     const c = (withObj ? svMap : svfMap).get(s.i * M + v.i) || 0;
     const base = (withObj ? v.ct : v.ci) / (withObj ? NT : NI);
-    let p = L_EXACT * (c / s.cs) + L_BASE * base;
-    let lvl: QualityTier = c >= STRONG ? 3 : c > 0 ? 2 : 0;
+    let p = L_EXACT * (c / Math.max(1, s.cs)) + L_BASE * base;
+    let lvl: QualityTier = c >= STRONG ? 3 : c >= 3 ? 2 : c > 0 ? 1 : 0;
 
     for (let g = 0; g < 2; g++) {
       const kg = s.k[g];
@@ -403,14 +446,15 @@ export function createCorpusEngine(D: RawCorpusData): CorpusEngineInstance {
         lvl = targetLvl;
       }
     }
-    return [p, lvl];
+    return [p, lvl, c];
   }
 
-  function pVO(v: WordRec, o: WordRec): [number, QualityTier] {
+  function pVO(v: WordRec, o: WordRec): [number, QualityTier, number] {
     const c = voMap.get(v.i * M + o.i) || 0;
     const base = o.co / NO;
-    let p = L_EXACT * (c / v.ct) + L_BASE * base;
-    let lvl: QualityTier = c >= STRONG ? 3 : c > 0 ? 2 : 0;
+    const vct = Math.max(1, v.ct);
+    let p = L_EXACT * (c / vct) + L_BASE * base;
+    let lvl: QualityTier = c >= STRONG ? 3 : c >= 3 ? 2 : c > 0 ? 1 : 0;
 
     for (let g = 0; g < 2; g++) {
       const kg = o.k[g];
@@ -419,19 +463,139 @@ export function createCorpusEngine(D: RawCorpusData): CorpusEngineInstance {
       const ck = K[g].vo.get(key) || 0;
       if (!ck) continue;
       const ko = K[g].O.get(kg) || 1;
-      p += L_K[g] * (ck / v.ct) * (o.co / ko);
+      p += L_K[g] * (ck / vct) * (o.co / ko);
       const nDistinct = K[g].voN.get(key) || 0;
       const targetLvl = (g + 1) as QualityTier;
       if (
         lvl < targetLvl &&
         ck >= MIN_C[g] &&
-        ck / v.ct / (ko / NO) >= MIN_LIFT[g] &&
+        ck / vct / (ko / NO) >= MIN_LIFT[g] &&
         nDistinct >= MIN_N[g]
       ) {
         lvl = targetLvl;
       }
     }
-    return [p, lvl];
+    return [p, lvl, c];
+  }
+
+  function isGrammaticalCore(
+    s: WordRec | null,
+    v: WordRec,
+    o: WordRec | null,
+    adv: AdvRec | null
+  ): boolean {
+    const vt = v.t;
+    // 1. 必带宾语的系动词/存现动词禁止无宾语裸用（拦截“谁也是”“他也有”）
+    if (!o && OBLIGATORY_OBJ_VERBS.has(vt)) return false;
+
+    // 2. 无主语时禁止裸用“是 + 普通名词”（拦截“是后备军”“是老师”，仅允许“是谁/是我/是你”）
+    if (!s && vt === '是' && (!o || !PRONOUN_SET.has(o.t))) return false;
+
+    // 2b. 存现句“来 + 客/人”主语必须是处所/家庭/时间，不能是“自己”或“专家/作家”等人物（拦截“自己来客了”“专家来客了”）
+    if (
+      s &&
+      vt === '来' &&
+      o &&
+      (o.t === '客' || o.t === '人' || o.t === '客人') &&
+      !/^(家|家里|咱家|我家|你家|他家|她家|老家|店|店里|村里|城里|院里|屋里|学校|公司|今天|今晚|明天|周末)$/.test(
+        s.t
+      )
+    ) {
+      return false;
+    }
+
+    // 2c. 领属“有 + 信件/证件/心思/感情”主语不能是无生命具体小物件（拦截“玩具可有邀请信”）
+    if (
+      s &&
+      vt === '有' &&
+      o &&
+      /信|证|卡|票|钱|礼|梦|心|情|意|病|事|空|假/.test(o.t) &&
+      /玩具|文件|石头|衣服|鞋子|杯子|桌子|椅子|剪贴/.test(s.t)
+    ) {
+      return false;
+    }
+
+    // 2d. 饮食动词“吃/喝”主语不能是交通工具、食物或无生命器物，宾语必须是可食饮物（拦截“车全吃蛋”“菜却吃蛋”“吃钱”）
+    if (vt === '吃' || vt === '喝') {
+      if (
+        s &&
+        /^(车|船|飞机|火车|汽车|菜|饭|肉|汤|水|钱|书|话|事|房|屋|桥|墙|路|鞋|衣)$/.test(
+          s.t
+        )
+      ) {
+        return false;
+      }
+      if (o && /^(钱|风沙|电话|电|土|灰|铁|石|墙|桥|路|车|房|书|字)$/.test(o.t)) {
+        return false;
+      }
+    }
+
+    // 3. 双音节及物动词 + 单音节非代词宾语韵律与词汇完整度校验（拦截“商量事”“学会事”“还给库”）
+    if (o && vt.length >= 2 && o.t.length === 1 && !PRONOUN_SET.has(o.t)) {
+      const exactVO = voMap.get(v.i * M + o.i) || 0;
+      if (o.t === '事') {
+        if (vt !== '做好' && vt !== '做坏' && vt !== '没有') return false;
+      } else if (!FREE_MONO_NOUNS.has(o.t) || exactVO < 12) {
+        return false;
+      }
+    }
+
+    // 4. 单字动词接“事”仅限地道动宾词
+    if (o && o.t === '事' && vt.length === 1) {
+      if (!/^[有没做干办出找管懂省来生怕问说谈讲]$/.test(vt)) return false;
+    }
+
+    // 5. 状语与谓语/宾语的现代汉语语法一致性校验
+    if (adv) {
+      const at = adv.t;
+      if (s && s.t === at) return false;
+      if (OBLIGATORY_OBJ_VERBS.has(vt) && ACTION_ONLY_ADVS.has(at)) {
+        return false; // 拦截“再是律师”“先是X”“要有缺陷”
+      }
+      if (DEGREE_ADVS.has(at)) {
+        if ((s && s.t === '谁') || (o && o.t === '谁')) return false; // 拦截“我蛮喜欢谁”
+        if (o && !DEGREE_TRANSITIVE_VERBS.has(vt)) return false; // 拦截“太听曲子”
+        if (vt === '是' || vt === '有' || vt === '没') return false;
+      }
+    }
+
+    return true;
+  }
+
+  function isCompatibleParticle(
+    s: WordRec | null,
+    v: WordRec,
+    o: WordRec | null,
+    adv: AdvRec | null,
+    pWord: string
+  ): boolean {
+    if (!pWord) return true;
+    // 程度副词一般不进“…吗”是非问句（拦截“戏很逊吗”“您超想吗”）
+    if (adv && DEGREE_ADVS.has(adv.t) && pWord.endsWith('吗')) return false;
+    // “才 + 单字谓语 + 吗”无上下文极为生硬（拦截“你才行吗”）
+    if (adv && adv.t === '才' && !o && v.t.length === 1 && pWord === '吗') {
+      return false;
+    }
+    // 未然助动词/否定祈使禁止跟句末完成态单字“了”打架（拦截“会干枯了”“会改口了”“别走了”除外）
+    if (
+      adv &&
+      IRREALIS_ADVS.has(adv.t) &&
+      pWord === '了' &&
+      adv.t !== '别' &&
+      adv.t !== '不' &&
+      adv.t !== '不想' &&
+      adv.t !== '不要'
+    ) {
+      return false;
+    }
+    // 疑问代词“谁”已含特指疑问，不能再叠是非问“吗”（拦截“谁喜欢你吗”“我喜欢谁吗”）
+    if (
+      ((s && s.t === '谁') || (o && o.t === '谁')) &&
+      pWord.endsWith('吗')
+    ) {
+      return false;
+    }
+    return true;
   }
 
   function scoreCore(
@@ -443,8 +607,8 @@ export function createCorpusEngine(D: RawCorpusData): CorpusEngineInstance {
   ): { base: number; tier: QualityTier } {
     let lp = 0;
     let n = 0;
-    let a: [number, QualityTier] | null = null;
-    let b: [number, QualityTier] | null = null;
+    let a: [number, QualityTier, number] | null = null;
+    let b: [number, QualityTier, number] | null = null;
     let tier: QualityTier = 0;
 
     if (s) {
@@ -465,12 +629,13 @@ export function createCorpusEngine(D: RawCorpusData): CorpusEngineInstance {
     }
 
     if (s && o && a && b) {
-      if (svoMap.get(`${s.i},${v.i},${o.i}`)) {
+      const svoC = svoMap.get(`${s.i},${v.i},${o.i}`) || 0;
+      if (svoC >= 2 || (a[1] === 3 && b[1] === 3 && a[2] >= 15 && b[2] >= 15 && v.t !== '是')) {
         tier = 3;
       } else {
         const lo = Math.min(a[1], b[1]);
         const hi = Math.max(a[1], b[1]);
-        tier = lo >= 2 && hi >= 3 ? 2 : lo >= 1 ? 1 : 0;
+        tier = lo >= 2 && hi >= 2 ? 2 : lo >= 1 ? 1 : 0;
         if (
           tier === 2 &&
           v.t === '是' &&
@@ -485,16 +650,19 @@ export function createCorpusEngine(D: RawCorpusData): CorpusEngineInstance {
     } else if (o && b) {
       tier = b[1];
     } else {
-      tier = adv ? 3 : 2;
+      tier = adv && ca >= 20 ? 3 : 2;
     }
 
     if (adv) {
       lp += Math.log(Math.max(1e-6, Math.min(1, ca / (v.ci + v.ct))));
       n++;
+      if (ca < 8 && tier === 3) tier = 2;
     }
 
+    // 对完整主谓宾/主状谓单句给予适度结构完整度加分，抵消主语先验 log P(S) 偏低带来的短句偏向
+    const completenessBonus = s && o ? 0.55 : s ? 0.25 : 0;
     const nr = (s ? s.nr : 0) + (o ? o.nr : 0);
-    return { base: lp / n - 1.2 * nr, tier };
+    return { base: lp / n + completenessBonus - 1.2 * nr, tier };
   }
 
   function particleOptions(
@@ -770,13 +938,15 @@ export function createCorpusEngine(D: RawCorpusData): CorpusEngineInstance {
                 if (adv) {
                   ca = avMap.get(`${adv.t}|${v.i}`) || 0;
                   if (!ca) continue;
-                  // 避免主语与时间状语同词重复（如“今天今天上班”）
-                  if (s && s.t === adv.t) continue;
                 }
+
+                if (!isGrammaticalCore(s, v, o, adv)) continue;
 
                 const sc = scoreCore(s, v, o, adv, ca);
 
                 for (const pOpt of pOpts) {
+                  if (!isCompatibleParticle(s, v, o, adv, pOpt.word)) continue;
+
                   const plainChars =
                     (s ? s.t : '') +
                     (adv ? adv.t : '') +
@@ -881,7 +1051,86 @@ export function createCorpusEngine(D: RawCorpusData): CorpusEngineInstance {
     return arr;
   }
 
-  // 长串（8~24字，或 6~7 字高阶结果不足时）连贯多分句组合
+  /**
+   * 复句篇章连贯性评估（拒绝把两个主语跳跃、话题断裂的碎片硬拼并虚标“地道”）：
+   * 1. 同主语承接省略（前句有主语，后句承前省主语）：自然流畅
+   * 2. 无主语对称排比 / 通用吉言祝颂衔接：自然流畅
+   * 3. 前后同主语或“你—我”对话呼应：通顺可接受
+   * 4. 前后主语突兀切换且非祝颂句（如“哥想发财，我说日语”）：重罚并限制最高为“勉强”
+   */
+  function evaluateDiscourseCoherence(
+    l: ScoredClause,
+    r: ScoredClause,
+    isMediumFallback: boolean
+  ): { bonus: number; maxTier: QualityTier } {
+    if (isMediumFallback) {
+      // 6~7 字切碎成两半本就是退而求其次的兜底，最高评为“勉强”，确保永远不抢占完整单句前排
+      if (l.s && !r.s && l.s.t !== '谁' && l.s.t !== '事') {
+        return { bonus: -2.0, maxTier: 1 };
+      }
+      if (!l.s && !r.s) return { bonus: -2.5, maxTier: 1 };
+      return { bonus: -5.0, maxTier: 1 };
+    }
+
+    const AUSPICIOUS_RE =
+      /发财|暴富|如意|开心|快乐|幸福|好运|吉祥|顺利|平安|健康|成功|上岸|脱单|干杯|过年|红包|喜|福|财|顺/;
+
+    if (
+      BLESSING_CLAUSES.has(l.plainChars) ||
+      BLESSING_CLAUSES.has(r.plainChars)
+    ) {
+      const other = BLESSING_CLAUSES.has(l.plainChars) ? r : l;
+      if (
+        BLESSING_CLAUSES.has(other.plainChars) ||
+        AUSPICIOUS_RE.test(other.plainChars)
+      ) {
+        return { bonus: 1.5, maxTier: 3 };
+      }
+      // 吉言配毫不相干的日常琐事（如“恭喜发财，我说日语”）：降为勉强
+      return { bonus: -3.5, maxTier: 1 };
+    }
+
+    // 同主语顺承省略（如“我想休息，不想上班”“哥先回家，顺便买菜”）；主语不能是“谁”或抽象无生命“事/话”
+    if (
+      l.s &&
+      !r.s &&
+      r.v.t !== '是' &&
+      l.s.t !== '谁' &&
+      !/^(事|事情|话|问题|消息|结果|天气)$/.test(l.s.t)
+    ) {
+      return { bonus: 1.0, maxTier: 3 };
+    }
+
+    // 无主语排比/先后承接（如“先喝奶茶，再撸小猫”“出去散步，顺便买菜”）
+    if (!l.s && !r.s) {
+      const parallelAdv = l.adv && r.adv ? 0.5 : 0;
+      return { bonus: 0.8 + parallelAdv, maxTier: 3 };
+    }
+
+    // 前句无主语，后句突然冒出无关主语（如“刚想复仇，我是人呀”）
+    if (!l.s && r.s) {
+      return { bonus: -3.8, maxTier: 1 };
+    }
+
+    // 前后均有主语：检查是否同一主语或你我呼应
+    if (l.s && r.s) {
+      if (l.s.t === r.s.t) {
+        return { bonus: 0.4, maxTier: 2 };
+      }
+      if (
+        (l.s.t === '你' && r.s.t === '我') ||
+        (l.s.t === '我' && r.s.t === '你')
+      ) {
+        return { bonus: 0.3, maxTier: 2 };
+      }
+      // 主语突兀跳跃（如“哥想发财，我说日语”）：重罚且严禁标“地道/通顺”
+      return { bonus: -4.8, maxTier: 1 };
+    }
+
+    return { bonus: -2.0, maxTier: 2 };
+  }
+
+  // 长串（8~24字，或 6~7 字无单句可用时）连贯多分句组合
   function generateMultiClauses(
     T: string,
     order: 'AB' | 'BA',
@@ -896,7 +1145,14 @@ export function createCorpusEngine(D: RawCorpusData): CorpusEngineInstance {
     const len = T.length;
     if (len < 6) return [];
 
-    const subOpts = {
+    // 前分句禁用句末语气词（避免“去吗，…”在逗号前出现句末问号词）
+    const leftSubOpts = {
+      allowParticles: false,
+      allowAdverb: opts.allowAdverb,
+      structureFilter: 'all' as StructureFilter,
+      seed: opts.seed,
+    };
+    const rightSubOpts = {
       allowParticles: opts.allowParticles,
       allowAdverb: opts.allowAdverb,
       structureFilter: 'all' as StructureFilter,
@@ -923,20 +1179,22 @@ export function createCorpusEngine(D: RawCorpusData): CorpusEngineInstance {
       const rightSeq = T.slice(k);
 
       let leftPool =
-        k <= 7 ? generateSingleClauses(leftSeq, order, subOpts).slice(0, 10) : [];
+        k <= 7
+          ? generateSingleClauses(leftSeq, order, leftSubOpts).slice(0, 12)
+          : [];
       if (leftPool.length === 0 && k >= 6) {
         leftPool = generateMultiClauses(
           leftSeq,
           order,
           Math.floor(k / 2),
-          opts,
+          { ...opts, allowParticles: false },
           true
         ).slice(0, 6);
       }
 
       let rightPool =
         len - k <= 7
-          ? generateSingleClauses(rightSeq, order, subOpts).slice(0, 10)
+          ? generateSingleClauses(rightSeq, order, rightSubOpts).slice(0, 12)
           : [];
       if (rightPool.length === 0 && len - k >= 6) {
         rightPool = generateMultiClauses(
@@ -948,24 +1206,22 @@ export function createCorpusEngine(D: RawCorpusData): CorpusEngineInstance {
         ).slice(0, 6);
       }
 
-      const symBonus = isMediumFallback
-        ? -6.0
-        : k === len - k || k === splitIndex
-          ? 0.6
-          : 0.1;
+      const symBonus = k === len - k || k === splitIndex ? 0.5 : 0.1;
 
       for (const l of leftPool) {
         for (const r of rightPool) {
           if (len < 14 && hasDuplicateChars(l.plainChars, r.plainChars)) {
             continue;
           }
+          const coh = evaluateDiscourseCoherence(l, r, isMediumFallback);
           const plainChars = l.plainChars + r.plainChars;
-          const tier = Math.min(l.tier, r.tier) as QualityTier;
+          const rawTier = Math.min(l.tier, r.tier) as QualityTier;
+          const tier = Math.min(rawTier, coh.maxTier) as QualityTier;
           const baseAvg =
             ((l.score - l.tier * TIER_W) * k +
               (r.score - r.tier * TIER_W) * (len - k)) /
             len;
-          const score = tier * TIER_W + baseAvg + symBonus;
+          const score = tier * TIER_W + baseAvg + symBonus + coh.bonus;
 
           const cur = merged.get(plainChars);
           if (cur && cur.score >= score) continue;
@@ -1182,7 +1438,7 @@ export function createCorpusEngine(D: RawCorpusData): CorpusEngineInstance {
         combined = [...single, ...multi];
       } else if (
         seq.length >= 6 &&
-        single.filter((x) => x.tier >= 2).length < 2
+        single.filter((x) => x.tier >= 2).length === 0
       ) {
         const fallbackMulti = generateMultiClauses(
           seq,
