@@ -24,12 +24,12 @@ beforeAll(() => {
 });
 
 describe('Upgraded Corpus Lexicon Scale & Integrity', () => {
-  it('loads the upgraded >40,900-word dependency corpus with >196,000 SV/VO collocations and 95 adverbs', () => {
+  it('loads the cleaned >40,900-word dependency corpus with >194,000 verified SV/VO collocations and 95 adverbs', () => {
     const eng = getLoadedCorpusEngine();
     expect(eng).not.toBeNull();
     expect(eng!.wordCount).toBeGreaterThan(40900);
-    expect(eng!.pairCount).toBeGreaterThan(196000);
-    expect(eng!.svoCount).toBeGreaterThan(93500);
+    expect(eng!.pairCount).toBeGreaterThan(194000);
+    expect(eng!.svoCount).toBeGreaterThan(91500);
     expect(eng!.advCount).toBeGreaterThanOrEqual(95);
   });
 
@@ -134,6 +134,49 @@ describe('Upgraded Corpus Engine Generation & Quality Tiers', () => {
         expect(charInitials).toBe(expected);
       }
     }
+  });
+
+  it('enforces Chinese fluency, prosody, selectional restrictions, and multi-clause coherence', () => {
+    const checkPairs: [string, string][] = [
+      ['张三', '李四'],
+      ['wm', 'xhs'],
+      ['恭喜发财', '万事如意'],
+      ['肖战', '王一博'],
+      ['王楚钦', '孙颖莎'],
+      ['今天', '不想上班'],
+    ];
+
+    const forbiddenPatterns = [
+      /商量事|学会事|喜欢事|发生事|知道事|才放事/,
+      /洗黄色|买小孩|有败血症|喝歌|自己来客了|专家来客了/,
+      /我是人员|是意思|谁也是|再是律师|蛮喜欢谁|很逊吗|超想吗/,
+    ];
+
+    for (const [rawA, rawB] of checkPairs) {
+      const a = parseUserString(rawA);
+      const b = parseUserString(rawB);
+      const res = generatePhrases({
+        initA: a.initials,
+        initB: b.initials,
+        limit: 15,
+      });
+      expect(res.length).toBeGreaterThan(0);
+      for (const p of res) {
+        expect(Number.isFinite(p.score)).toBe(true);
+        for (const badRe of forbiddenPatterns) {
+          expect(p.text).not.toMatch(badRe);
+        }
+      }
+    }
+
+    // 8字吉言组合置顶结果应前后语义呼应，而非“恭喜发财，我是人员/我说日语”
+    const festive = generatePhrases({
+      initA: 'gxfc',
+      initB: 'wsry',
+      limit: 5,
+    });
+    expect(festive[0].tier).toBe(3);
+    expect(festive[0].text).toMatch(/发财.*如意|如意.*发财/);
   });
 
   it('covers 100% of all 23x23 = 529 single-character pairs (1+1 length=2)', () => {
