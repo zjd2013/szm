@@ -1232,7 +1232,7 @@ export function createCorpusEngine(D: RawCorpusData): CorpusEngineInstance {
 
           merged.set(plainChars, {
             plainChars,
-            displayText: `${l.displayText}，${r.displayText}`,
+            displayText: `${l.displayText}${r.displayText}`,
             ini: T,
             s: l.s ?? r.s,
             adv: l.adv ?? r.adv,
@@ -1351,13 +1351,7 @@ export function createCorpusEngine(D: RawCorpusData): CorpusEngineInstance {
       };
     });
 
-    const isMulti = it.parts.some((p) => p.clauseBreakAfter);
-    const labelParts = it.parts.map((p) =>
-      p.clauseBreakAfter ? `${p.shortLabel} ，` : p.shortLabel
-    );
-    const patternLabel = isMulti
-      ? labelParts.join(' ')
-      : it.parts.map((p) => p.shortLabel).join(' + ');
+    const patternLabel = it.parts.map((p) => p.shortLabel).join(' + ');
 
     const meta = TIER_META[it.tier];
     const vibe = inferVibe(it.plainChars);

@@ -245,15 +245,7 @@ export const PhraseCard: React.FC<PhraseCardProps> = ({
                   </span>
                 </div>
               </div>
-              {seg.clauseBreakAfter && (
-                <span
-                  className={`self-center pb-3 font-bold text-stone-400 ${
-                    featured ? 'text-2xl sm:text-3xl' : 'text-xl sm:text-2xl'
-                  }`}
-                >
-                  ，
-                </span>
-              )}
+
             </React.Fragment>
           );
         })}
