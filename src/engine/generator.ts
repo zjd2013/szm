@@ -717,7 +717,7 @@ function mergeTwoClauses(
 
   return {
     plainChars: left.plainChars + right.plainChars,
-    displayText: `${left.displayText}，${right.displayText}`,
+    displayText: `${left.displayText}${right.displayText}`,
     initials: seq,
     order,
     sourceSplitIndex: splitIndex,
@@ -726,7 +726,7 @@ function mergeTwoClauses(
     patternCode: isMulti ? 'MULTI' : `${left.patternCode}+${right.patternCode}`,
     patternLabel: isMulti
       ? '多句连贯（主）谓（宾）'
-      : `${left.patternLabel} ， ${right.patternLabel}`,
+      : `${left.patternLabel} + ${right.patternLabel}`,
     hasSubject: left.hasSubject && right.hasSubject,
     hasObject: left.hasObject && right.hasObject,
     hasModal: left.hasModal || right.hasModal,
