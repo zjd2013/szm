@@ -1,5 +1,6 @@
 import { pinyin } from 'pinyin-pro';
-import { CharAnalysis, ParsedStringInput } from './types';
+import charmapData from './charmapData.json';
+import { ParsedCharToken, ParsedStringInput } from './types';
 
 export const VALID_PINYIN_INITIALS = new Set([
   'a', 'b', 'c', 'd', 'e', 'f', 'g', 'h',
@@ -18,21 +19,54 @@ const IUV_MAP: Record<'i' | 'u' | 'v', string> = {
   v: 'y',
 };
 
-// 常见多音字（首字母不同且日常/姓氏高频）
-const COMMON_POLYPHONE_INITIALS: Record<string, string[]> = {
+// 作姓氏时读音不同的字（借鉴自 CP-generator，用于人名首字智能识别及多音切换）
+const SURNAME_INITIALS: Record<string, string> = {
+  单: 's',
+  曾: 'z',
+  解: 'x',
+  仇: 'q',
+  区: 'o',
+  查: 'z',
+  翟: 'z',
+  尉: 'y',
+  繁: 'p',
+  秘: 'b',
+  覃: 'q',
+  种: 'c',
+  折: 's',
+  召: 's',
+  朴: 'p',
+  盖: 'g',
+  员: 'y',
+  贾: 'j',
+  沈: 's',
+  石: 's',
+};
+
+// 常见非姓氏固定词前缀保护（避免“简单/曾经/解决/查询”等普通词首字被误判为姓氏）
+const NON_SURNAME_WORDS = new Set([
+  '单位', '单纯', '单独', '单身', '单车', '单词', '单一', '单曲',
+  '曾经', '曾祖',
+  '解决', '解释', '解放', '解散', '解剖', '解除', '解锁',
+  '仇恨', '仇人', '仇敌',
+  '区域', '区别', '区分', '区间',
+  '查询', '查找', '查看', '查房', '查明',
+  '秘密', '秘诀', '秘书', '秘籍',
+  '繁荣', '繁华', '繁忙', '繁星',
+  '种植', '种子', '种类', '种族',
+  '折腾', '折磨', '折扣', '折纸',
+  '召唤', '召集', '召开',
+  '朴素', '朴实',
+  '盖子', '盖章', '盖饭',
+  '员工',
+  '石头', '石榴', '石化',
+]);
+
+const EXTRA_POLYPHONES: Record<string, string[]> = {
   长: ['c', 'z'],
   乐: ['l', 'y'],
   行: ['x', 'h'],
   重: ['z', 'c'],
-  单: ['d', 's', 'c'],
-  曾: ['c', 'z'],
-  沈: ['s', 'c'],
-  解: ['j', 'x'],
-  区: ['q', 'o'],
-  查: ['c', 'z'],
-  仇: ['c', 'q'],
-  朝: ['c', 'z'],
-  传: ['c', 'z'],
   藏: ['c', 'z'],
   调: ['d', 't'],
   弹: ['t', 'd'],
@@ -45,56 +79,20 @@ const COMMON_POLYPHONE_INITIALS: Record<string, string[]> = {
   强: ['q', 'j'],
   卡: ['k', 'q'],
   壳: ['k', 'q'],
-  扒: ['b', 'p'],
   便: ['b', 'p'],
-  泊: ['b', 'p'],
   参: ['c', 's'],
-  澄: ['c', 'd'],
-  攒: ['z', 'c'],
   提: ['t', 'd'],
   阿: ['a', 'e'],
   恶: ['e', 'w'],
   给: ['g', 'j'],
-  颈: ['j', 'g'],
-  龟: ['g', 'j', 'q'],
-  吭: ['k', 'h'],
-  巷: ['x', 'h'],
-  稽: ['j', 'q'],
   系: ['x', 'j'],
-  茄: ['q', 'j'],
-  贾: ['j', 'g'],
-  见: ['j', 'x'],
   校: ['x', 'j'],
-  芥: ['j', 'g'],
-  矜: ['j', 'q'],
-  溃: ['k', 'h'],
-  蔓: ['m', 'w'],
-  秘: ['m', 'b'],
-  鸟: ['n', 'd'],
-  弄: ['n', 'l'],
-  刨: ['p', 'b'],
-  炮: ['p', 'b'],
-  瀑: ['p', 'b'],
-  栖: ['q', 'x'],
-  亲: ['q', 'x'],
-  折: ['z', 's'],
-  识: ['s', 'z'],
   宿: ['s', 'x'],
-  汤: ['t', 's'],
-  陶: ['t', 'y'],
-  尾: ['w', 'y'],
-  尉: ['w', 'y'],
-  蔚: ['w', 'y'],
-  纤: ['x', 'q'],
   吓: ['x', 'h'],
-  叶: ['y', 'x'],
-  遗: ['y', 'w'],
-  吁: ['x', 'y'],
-  轧: ['y', 'z', 'g'],
-  粘: ['z', 'n'],
   属: ['s', 'z'],
-  幢: ['z', 'c'],
 };
+
+const CM_POLY: Record<string, string> = charmapData.p;
 
 export function getWordInitials(word: string): string {
   const arr = pinyin(word, {
@@ -116,14 +114,13 @@ export function parseUserString(
   overrides: Record<number, string> = {},
   allowIUVMapping = true
 ): ParsedStringInput {
-  // 自动忽略首尾及中间空白符，方便用户输入如 "z j d" 或多字短语
-  const cleaned = raw.replace(/\s+/g, '');
+  // 自动忽略空格与常见分隔符（· . - _ , ， 、）
+  const cleaned = raw.replace(/[\s·.\-_,，、]+/g, '');
   const codePoints = Array.from(cleaned);
 
   if (codePoints.length === 0) {
     return {
       raw,
-      trimmed: cleaned,
       valid: false,
       error: '请输入至少 1 个字符（汉字或英文字母，不限 2–3 字）',
       chars: [],
@@ -136,7 +133,6 @@ export function parseUserString(
   if (codePoints.length > MAX_INPUT_CHARS) {
     return {
       raw,
-      trimmed: cleaned,
       valid: false,
       error: `当前长度为 ${codePoints.length}，单串建议不超过 ${MAX_INPUT_CHARS} 个字符以保证流畅度`,
       chars: [],
@@ -150,7 +146,6 @@ export function parseUserString(
     if (!HAN_REGEX.test(ch) && !ALPHA_REGEX.test(ch)) {
       return {
         raw,
-        trimmed: cleaned,
         valid: false,
         error: `包含不支持的字符「${ch}」，请仅输入中文汉字或英文字母`,
         chars: [],
@@ -170,7 +165,7 @@ export function parseUserString(
     type: 'array',
   });
 
-  const chars: CharAnalysis[] = [];
+  const chars: ParsedCharToken[] = [];
   let hasIUV = false;
   let hasPolyphone = false;
 
@@ -182,13 +177,34 @@ export function parseUserString(
         defaultInit = 'y';
       }
 
-      const explicitAlts = COMMON_POLYPHONE_INITIALS[ch];
+      // 若位于首字、是典型多音姓氏、且当前不是常见普通双字词（2~3字人名场景），优先采用姓氏声母
+      const surnameInit = SURNAME_INITIALS[ch];
+      const prefix2 = codePoints.slice(0, 2).join('');
+      if (
+        i === 0 &&
+        surnameInit &&
+        codePoints.length >= 2 &&
+        codePoints.length <= 3 &&
+        !NON_SURNAME_WORDS.has(prefix2)
+      ) {
+        defaultInit = surnameInit;
+      }
+
       const altSet = new Set<string>([defaultInit]);
-      if (explicitAlts) {
-        for (const a of explicitAlts) {
+      if (CM_POLY[ch]) {
+        for (const a of CM_POLY[ch]) {
           if (VALID_PINYIN_INITIALS.has(a)) altSet.add(a);
         }
       }
+      if (EXTRA_POLYPHONES[ch]) {
+        for (const a of EXTRA_POLYPHONES[ch]) {
+          if (VALID_PINYIN_INITIALS.has(a)) altSet.add(a);
+        }
+      }
+      if (surnameInit && VALID_PINYIN_INITIALS.has(surnameInit)) {
+        altSet.add(surnameInit);
+      }
+
       const altInitials = Array.from(altSet);
       if (altInitials.length > 1) {
         hasPolyphone = true;
@@ -202,8 +218,6 @@ export function parseUserString(
         index: i,
         rawChar: ch,
         isChinese: true,
-        isAlpha: false,
-        defaultInitial: defaultInit,
         selectedInitial,
         altInitials,
         pinyinDisplay: wordPinyins[i] || selectedInitial,
@@ -215,7 +229,6 @@ export function parseUserString(
         if (!allowIUVMapping) {
           return {
             raw,
-            trimmed: cleaned,
             valid: false,
             error: `汉语拼音中没有以「${lower.toUpperCase()}」开头的汉字，可开启 i/u/v 谐音映射`,
             chars: [],
@@ -229,8 +242,6 @@ export function parseUserString(
           index: i,
           rawChar: ch,
           isChinese: false,
-          isAlpha: true,
-          defaultInitial: mapped,
           selectedInitial: mapped,
           altInitials: [mapped],
           pinyinDisplay: `${lower}→${mapped}`,
@@ -241,8 +252,6 @@ export function parseUserString(
           index: i,
           rawChar: ch,
           isChinese: false,
-          isAlpha: true,
-          defaultInitial: lower,
           selectedInitial: lower,
           altInitials: [lower],
           pinyinDisplay: lower,
@@ -253,7 +262,6 @@ export function parseUserString(
 
   return {
     raw,
-    trimmed: cleaned,
     valid: true,
     chars,
     initials: chars.map((c) => c.selectedInitial).join(''),

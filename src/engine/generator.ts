@@ -5,6 +5,7 @@ import {
   NATURAL_VP_SET,
   VERB_ENTRIES,
 } from './lexiconVerbs';
+import { getLoadedCorpusEngine, TIER_META } from './corpusEngine';
 import { MODAL_ENTRIES } from './lexiconParticles';
 import { MODIFIER_ENTRIES, NOUN_ENTRIES } from './lexiconNouns';
 import { getWordPinyinArray } from './pinyinUtils';
@@ -846,6 +847,7 @@ function hydrateCandidate(raw: RawCandidate, idx: number): GeneratedPhrase {
     };
   });
 
+  const tier = raw.score >= 125 ? 3 : raw.score >= 108 ? 2 : 1;
   return {
     id: `${raw.order}-${raw.plainChars}-${idx}`,
     text: raw.displayText,
@@ -860,6 +862,9 @@ function hydrateCandidate(raw: RawCandidate, idx: number): GeneratedPhrase {
     hasSubject: raw.hasSubject,
     hasObject: raw.hasObject,
     hasModal: raw.hasModal,
+    tier,
+    tierLabel: TIER_META[tier].label,
+    tierDesc: TIER_META[tier].desc,
     vibe: raw.vibe,
     score: Math.round(raw.score * 10) / 10,
     segments,
@@ -872,6 +877,8 @@ export interface GenerateOptions {
   orderFilter?: OrderFilter;
   structureFilter?: StructureFilter;
   vibeFilter?: VibeFilter;
+  allowParticles?: boolean;
+  allowAdverb?: boolean;
   seed?: number;
   limit?: number;
 }
@@ -883,6 +890,60 @@ export function generatePhrases(opts: GenerateOptions): GeneratedPhrase[] {
     orderFilter = 'all',
     structureFilter = 'all',
     vibeFilter = 'all',
+    allowParticles = true,
+    allowAdverb = true,
+    seed = 0,
+    limit = 24,
+  } = opts;
+
+  if (!initA || !initB) return [];
+
+  // 1) 优先调用升级版 4.09万词 + 19.6万依存搭配统计语料引擎
+  const corpusEng = getLoadedCorpusEngine();
+  if (corpusEng) {
+    const corpusResults = corpusEng.generate({
+      initA,
+      initB,
+      orderFilter,
+      structureFilter,
+      vibeFilter,
+      allowParticles,
+      allowAdverb,
+      seed,
+      limit,
+    });
+    if (corpusResults.length >= Math.min(limit, 6)) {
+      return corpusResults;
+    }
+    // 极端刁钻组合（如全 o/e）由下方全声母规则引擎补充保底
+    const fallback = generateRuleBasedPhrases(opts);
+    const seen = new Set(corpusResults.map((r) => r.text.replace(/，/g, '')));
+    for (const f of fallback) {
+      if (corpusResults.length >= limit) break;
+      const plain = f.text.replace(/，/g, '');
+      if (seen.has(plain)) continue;
+      seen.add(plain);
+      corpusResults.push({
+        ...f,
+        tier: 0,
+        tierLabel: TIER_META[0].label,
+        tierDesc: TIER_META[0].desc,
+      });
+    }
+    return corpusResults;
+  }
+
+  return generateRuleBasedPhrases(opts);
+}
+
+function generateRuleBasedPhrases(opts: GenerateOptions): GeneratedPhrase[] {
+  const {
+    initA,
+    initB,
+    orderFilter = 'all',
+    structureFilter = 'all',
+    vibeFilter = 'all',
+    allowParticles = true,
     seed = 0,
     limit = 24,
   } = opts;
@@ -903,8 +964,18 @@ export function generatePhrases(opts: GenerateOptions): GeneratedPhrase[] {
     pool = pool.concat(generateForSequence(seqBA, 'BA', initB.length, seed));
   }
 
-  if (structureFilter === 'full_svo') {
+  if (!allowParticles) {
+    pool = pool.filter((c) => !c.hasModal);
+  }
+
+  if (structureFilter === 'full_svo' || structureFilter === 'SVO') {
     pool = pool.filter((c) => c.hasSubject && c.hasObject);
+  } else if (structureFilter === 'SV') {
+    pool = pool.filter((c) => c.hasSubject && !c.hasObject);
+  } else if (structureFilter === 'VO') {
+    pool = pool.filter((c) => !c.hasSubject && c.hasObject);
+  } else if (structureFilter === 'V') {
+    pool = pool.filter((c) => !c.hasSubject && !c.hasObject);
   } else if (structureFilter === 'compact') {
     pool = pool.filter((c) => !c.hasSubject || !c.hasObject);
   } else if (structureFilter === 'with_modal') {
