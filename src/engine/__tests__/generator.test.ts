@@ -6,6 +6,8 @@ import {
   getLoadedCorpusEngine,
   setCorpusEngineFromRaw,
 } from '../corpusEngine';
+import { getLoadedCpEngine, setCpEngineFromRaw } from '../cpEngine';
+import { FORBIDDEN_PATTERNS } from '../fluencyGuards';
 import { generatePhrases } from '../generator';
 import { MODIFIER_ENTRIES, NOUN_ENTRIES } from '../lexiconNouns';
 import { MODAL_ENTRIES } from '../lexiconParticles';
@@ -21,6 +23,11 @@ beforeAll(() => {
   const gz = fs.readFileSync('public/corpus.bin');
   const D = JSON.parse(zlib.gunzipSync(gz).toString('utf8')) as RawCorpusData;
   setCorpusEngineFromRaw(D);
+
+  // CP-generator v2 语料（gzip，约 19.8 MB JSON / 5.9 MB on disk）
+  const cpGz = fs.readFileSync('public/cp-corpus.bin');
+  const cpD = JSON.parse(zlib.gunzipSync(cpGz).toString('utf8'));
+  setCpEngineFromRaw(cpD);
 });
 
 describe('Upgraded Corpus Lexicon Scale & Integrity', () => {
@@ -31,6 +38,14 @@ describe('Upgraded Corpus Lexicon Scale & Integrity', () => {
     expect(eng!.pairCount).toBeGreaterThan(194000);
     expect(eng!.svoCount).toBeGreaterThan(91500);
     expect(eng!.advCount).toBeGreaterThanOrEqual(95);
+  });
+
+  it('loads the CP-generator v2 corpus (74k+ words, 600k+ collocations, 746k+ verbatim phrases)', () => {
+    const cpEng = getLoadedCpEngine();
+    expect(cpEng).not.toBeNull();
+    expect(cpEng!.wordCount).toBeGreaterThan(74000);
+    expect(cpEng!.pairCount).toBeGreaterThan(600000);
+    expect(cpEng!.phraseCount).toBeGreaterThan(746000);
   });
 
   it('ensures curated fallback lexicon entries have valid initials', () => {
@@ -90,6 +105,8 @@ describe('Upgraded Corpus Engine Generation & Quality Tiers', () => {
       ['张三', '李四'],
       ['xm', 'xh'],
       ['wm', 'xhs'],
+      ['wr', 'zfzwm'],
+      ['ljtzs', 'xm'],
       ['lb', 'dzy'],
       ['周杰伦', '昆凌'],
       ['zjd', 'szm'],
@@ -113,6 +130,12 @@ describe('Upgraded Corpus Engine Generation & Quality Tiers', () => {
         limit: 8,
       });
       expect(res.length, `No result for ${rawA}+${rawB}`).toBeGreaterThan(0);
+
+      // CP-generator v2 已接入：「我+爱你」应浮出带语料原句命中计数的结果
+      if (rawA === '我' && rawB === '爱你') {
+        expect(res.some((p) => p.text === '我爱你')).toBe(true);
+        expect(res.some((p) => (p.seen ?? 0) > 0)).toBe(true);
+      }
 
       console.log(
         `[${rawA}(${a.initials}) + ${rawB}(${b.initials})] =>`,
@@ -146,12 +169,6 @@ describe('Upgraded Corpus Engine Generation & Quality Tiers', () => {
       ['今天', '不想上班'],
     ];
 
-    const forbiddenPatterns = [
-      /商量事|学会事|喜欢事|发生事|知道事|才放事/,
-      /洗黄色|买小孩|有败血症|喝歌|自己来客了|专家来客了/,
-      /我是人员|是意思|谁也是|再是律师|蛮喜欢谁|很逊吗|超想吗/,
-    ];
-
     for (const [rawA, rawB] of checkPairs) {
       const a = parseUserString(rawA);
       const b = parseUserString(rawB);
@@ -163,7 +180,7 @@ describe('Upgraded Corpus Engine Generation & Quality Tiers', () => {
       expect(res.length).toBeGreaterThan(0);
       for (const p of res) {
         expect(Number.isFinite(p.score)).toBe(true);
-        for (const badRe of forbiddenPatterns) {
+        for (const badRe of FORBIDDEN_PATTERNS) {
           expect(p.text).not.toMatch(badRe);
         }
       }
