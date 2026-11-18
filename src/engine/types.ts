@@ -88,7 +88,9 @@ export type ConstituentRole =
   | 'adverb'
   | 'predicate'
   | 'object'
-  | 'modal_end';
+  | 'modal_end'
+  | 'modifier'
+  | 'aux';
 
 export interface AnnotatedChar {
   char: string;
@@ -99,8 +101,8 @@ export interface AnnotatedChar {
 
 export interface PhraseSegment {
   role: ConstituentRole;
-  roleLabel: '语气词' | '主语' | '状语' | '谓语' | '宾语';
-  shortLabel: '语' | '主' | '状' | '谓' | '宾';
+  roleLabel: '语气词' | '主语' | '状语' | '谓语' | '宾语' | '定语' | '助词';
+  shortLabel: '语' | '主' | '状' | '谓' | '宾' | '定' | '助';
   word: string;
   chars: AnnotatedChar[];
   clauseBreakAfter?: boolean;
@@ -126,6 +128,8 @@ export interface GeneratedPhrase {
   tierDesc: string;
   vibe: StyleVibe;
   score: number;
+  /** CP-generator 引擎：整句在 880 万条短句语料中的原样命中次数（可选展示徽标） */
+  seen?: number;
   segments: PhraseSegment[];
 }
 

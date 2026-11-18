@@ -1,4 +1,9 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, {
+  useDeferredValue,
+  useEffect,
+  useMemo,
+  useState,
+} from 'react';
 import {
   ArrowLeftRight,
   BookOpen,
@@ -15,6 +20,7 @@ import {
   CorpusEngineInstance,
   loadCorpusEngine,
 } from './engine/corpusEngine';
+import { CpEngineInstance, loadCpEngine } from './engine/cpEngine';
 import { generatePhrases } from './engine/generator';
 import { parseUserString } from './engine/pinyinUtils';
 import {
@@ -91,6 +97,18 @@ export const App: React.FC = () => {
     advs: 0,
   });
 
+  const [cpStats, setCpStats] = useState<{
+    ready: boolean;
+    words: number;
+    pairs: number;
+    phrases: number;
+  }>({
+    ready: false,
+    words: 0,
+    pairs: 0,
+    phrases: 0,
+  });
+
   useEffect(() => {
     let mounted = true;
     loadCorpusEngine()
@@ -106,6 +124,24 @@ export const App: React.FC = () => {
       .catch(() => {
         // 若离线环境未能加载压缩包，自动无缝使用内置规则词库兜底
       });
+    return () => {
+      mounted = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    let mounted = true;
+    // CP-generator v2 语料（约 5.9 MB gzip）独立惰性加载：
+    // 就绪后经 cpStats.ready 触发 allPhrases 重算，期间单引擎照常工作
+    loadCpEngine().then((eng: CpEngineInstance | null) => {
+      if (!mounted || !eng) return;
+      setCpStats({
+        ready: true,
+        words: eng.wordCount,
+        pairs: eng.pairCount,
+        phrases: eng.phraseCount,
+      });
+    });
     return () => {
       mounted = false;
     };
@@ -168,11 +204,16 @@ export const App: React.FC = () => {
   const bothValid = parsedA.valid && parsedB.valid;
   const anyIUV = parsedA.hasIUV || parsedB.hasIUV;
 
+  // 双引擎合并生成为同步计算（CP 单次生成数十到数百毫秒）：
+  // 用 deferred value 让键入渲染先行提交，结果在并发空档里补齐，保持输入手感
+  const deferredParsedA = useDeferredValue(parsedA);
+  const deferredParsedB = useDeferredValue(parsedB);
+
   const allPhrases = useMemo(() => {
-    if (!bothValid) return [];
+    if (!deferredParsedA.valid || !deferredParsedB.valid) return [];
     return generatePhrases({
-      initA: parsedA.initials,
-      initB: parsedB.initials,
+      initA: deferredParsedA.initials,
+      initB: deferredParsedB.initials,
       orderFilter,
       structureFilter,
       vibeFilter,
@@ -182,9 +223,8 @@ export const App: React.FC = () => {
       limit: 75,
     });
   }, [
-    bothValid,
-    parsedA.initials,
-    parsedB.initials,
+    deferredParsedA,
+    deferredParsedB,
     orderFilter,
     structureFilter,
     vibeFilter,
@@ -192,6 +232,7 @@ export const App: React.FC = () => {
     allowAdverb,
     seed,
     corpusStats.ready,
+    cpStats.ready,
   ]);
 
   const totalPages = Math.max(1, Math.ceil(allPhrases.length / PAGE_SIZE));
@@ -229,13 +270,15 @@ export const App: React.FC = () => {
                 </h1>
                 <span className="hidden md:inline-flex items-center gap-1 rounded-full border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-[11px] font-medium text-emerald-800">
                   <Database className="h-3 w-3" />
-                  {corpusStats.ready
-                    ? `${corpusStats.words.toLocaleString()} 词 · ${corpusStats.pairs.toLocaleString()} 组依存搭配`
-                    : '升级语料词库加载中…'}
+                  {cpStats.ready
+                    ? `${cpStats.words.toLocaleString()} 词 · ${cpStats.pairs.toLocaleString()} 组搭配 · ${cpStats.phrases.toLocaleString()} 条原句`
+                    : corpusStats.ready
+                      ? `${corpusStats.words.toLocaleString()} 词 · ${corpusStats.pairs.toLocaleString()} 组依存搭配`
+                      : '升级语料词库加载中…'}
                 </span>
               </div>
               <p className="text-xs text-stone-500 hidden sm:block">
-                双串首字母正逆序拼接 ·［主语］+［状语］+ 谓语 +［宾语］+［语气词］语料概率引擎
+                双串首字母正逆序拼接 ·［主语］+［状语］+ 谓语 +［宾语］+［语气词］双语料概率引擎
               </p>
             </div>
           </div>
@@ -615,6 +658,14 @@ export const App: React.FC = () => {
                 <span className="h-2.5 w-2.5 rounded-full bg-purple-400" />
                 语气词（了/吗/吧/呀/了吗/好吗…）
               </span>
+              <span className="inline-flex items-center gap-1">
+                <span className="h-2.5 w-2.5 rounded-full bg-fuchsia-500" />
+                定语（可选）
+              </span>
+              <span className="inline-flex items-center gap-1">
+                <span className="h-2.5 w-2.5 rounded-full bg-lime-500" />
+                助词（的/地/了/着/过）
+              </span>
             </div>
             <div className="flex items-center gap-3">
               <span className="inline-flex items-center gap-1">
@@ -634,13 +685,32 @@ export const App: React.FC = () => {
             </summary>
             <ul className="mt-2 list-disc space-y-1 pl-5 leading-relaxed">
               <li>
-                <b>4.09 万词 + 19.6 万组依存搭配升级词库</b>：在约 602 万条真实对白依存句法统计词表的基础上，清洗了低俗词、翻译腔西方人名与专名误标，补齐了原语料缺失的现代高频茶饮美食（奶茶、炸鸡、螺蛳粉、草莓等）、萌宠风物（考拉、晚霞、星河、夏天等）、职场校园日常（闺蜜、摸鱼、撸猫、逛街、等、给、开、回等）以及全部 23 个拼音声母单字兜底。
+                <b>双语料引擎：CP-generator v2 × 影视字幕依存统计</b>
+                两套语料按评级分层合并、各自头部轮流进前排。CP-generator 侧：约 880
+                万条字幕/日常聊天/菜谱/餐厅点评/问答短句，统计出
+                <b>74,523 词、604,878 组搭配（主–谓/谓–宾/定–中/状–谓）、746,252
+                条语料原样短语</b>；整句在语料中出现过即直接判「地道」，并带原句命中次数徽标。
               </li>
               <li>
-                <b>单双字状语与复合语气词</b>：不仅支持 64 个单字状语（不、很、都、想、先、去、来…），还升级支持 31 个双字口语状语（不想、不要、一起、偷偷、已经、终于、快来、打算…）与双字句末语气词（了吗、了吧、好吗、对吧…）。
+                <b>4.09 万词 + 19.6 万组依存搭配升级词库</b>：在约 602
+                万条真实对白依存句法统计词表的基础上，清洗了低俗词、翻译腔西方人名与专名误标，补齐了原语料缺失的现代高频茶饮美食（奶茶、炸鸡、螺蛳粉、草莓等）、萌宠风物（考拉、晚霞、星河、夏天等）、职场校园日常（闺蜜、摸鱼、撸猫、逛街、等、给、开、回等）以及全部
+                23 个拼音声母单字兜底。
               </li>
               <li>
-                <b>四级真实度评定</b>：「地道」代表整组搭配在真实语料或现代高频表达中多次出现；「通顺」代表各段搭配分别出现过或有同类语义簇支撑；「勉强」「硬凑」仅在刁钻字母组合下保底出现。同时突破 2–3 字限制，支持 1～12 字单串与长句自动分句。
+                <b>三重反例门控 + 共享流畅度守卫</b>
+                CP 侧的边界歧义再切分（吃|好玩|家）、谓名粘连（快乐|人|生）、语气词搭配度（终于…了吗？什么…吗？哇仅跟
+                u/ao）与 SZM 侧的禁句清单双保险，
+                统计上共现但不自然的句子（如「我蛮喜欢谁」）一律不予通过。
+              </li>
+              <li>
+                <b>单双字状语与复合语气词</b>：不仅支持 64
+                个单字状语（不、很、都、想、先、去、来…），还升级支持 31
+                个双字口语状语（不想、不要、一起、偷偷、已经、终于、快来、打算…）与双字句末语气词（了吗、了吧、好吗、对吧…）。
+              </li>
+              <li>
+                <b>四级真实度评定</b>：「地道」代表整组搭配在真实语料或现代高频表达中多次出现；「通顺」代表各段搭配分别出现过或有同类语义簇支撑；「勉强」「硬凑」仅在刁钻字母组合下保底出现。同时突破
+                2–3 字限制，支持 1～12 字单串与长句自动分句（多分句与吉言呼应能力为
+                SZM 独有，负责 CP 搞定不了的长串）。
               </li>
             </ul>
           </details>

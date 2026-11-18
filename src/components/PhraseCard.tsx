@@ -41,6 +41,16 @@ const ROLE_STYLES: Record<
     box: 'bg-purple-50/60 border-purple-200/80 text-purple-950',
     underline: 'bg-purple-400',
   },
+  modifier: {
+    badge: 'bg-fuchsia-100 text-fuchsia-800 border-fuchsia-200',
+    box: 'bg-fuchsia-50/60 border-fuchsia-200/80 text-fuchsia-950',
+    underline: 'bg-fuchsia-500',
+  },
+  aux: {
+    badge: 'bg-lime-100 text-lime-800 border-lime-200',
+    box: 'bg-lime-50/60 border-lime-200/80 text-lime-950',
+    underline: 'bg-lime-500',
+  },
 };
 
 const TIER_STYLES: Record<QualityTier, string> = {
@@ -140,6 +150,14 @@ export const PhraseCard: React.FC<PhraseCardProps> = ({
           >
             {phrase.order === 'AB' ? '正序 A + B' : '交换 B + A'}
           </span>
+          {phrase.seen != null && phrase.seen > 0 && (
+            <span
+              title={`整句在 880 万条短句语料中原样出现 ${phrase.seen.toLocaleString()} 次`}
+              className="inline-flex cursor-help items-center gap-1 rounded-full border border-rose-200 bg-rose-50 px-2 py-0.5 text-[11px] font-semibold text-rose-700"
+            >
+              原句命中 {phrase.seen.toLocaleString()}
+            </span>
+          )}
           <span className="inline-flex items-center rounded-full border border-stone-200 bg-stone-50 px-2 py-0.5 text-[11px] font-medium text-stone-600">
             {phrase.patternLabel}
           </span>

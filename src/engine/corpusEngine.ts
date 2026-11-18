@@ -153,7 +153,7 @@ const POETIC_RE =
 const FUNNY_RE =
   /摸鱼|躺平|暴富|发财|干饭|偷吃|撸|考拉|柴犬|锦鲤|学霸|打工人|瞄准|加班|熬夜|红包|呗|哟|哈|哇|傻|笨|胖/;
 
-function inferVibe(text: string): StyleVibe {
+export function inferVibe(text: string): StyleVibe {
   if (FUNNY_RE.test(text)) return 'funny';
   if (POETIC_RE.test(text)) return 'poetic';
   return 'daily';

@@ -6,6 +6,7 @@ import {
   VERB_ENTRIES,
 } from './lexiconVerbs';
 import { getLoadedCorpusEngine, TIER_META } from './corpusEngine';
+import { generateCpPhrases } from './cpEngine';
 import { MODAL_ENTRIES } from './lexiconParticles';
 import { MODIFIER_ENTRIES, NOUN_ENTRIES } from './lexiconNouns';
 import { getWordPinyinArray } from './pinyinUtils';
@@ -17,6 +18,7 @@ import {
   NounEntry,
   OrderFilter,
   PhraseSegment,
+  QualityTier,
   SemTag,
   StructureFilter,
   StyleVibe,
@@ -898,42 +900,89 @@ export function generatePhrases(opts: GenerateOptions): GeneratedPhrase[] {
 
   if (!initA || !initB) return [];
 
-  // 1) 优先调用升级版 4.09万词 + 19.6万依存搭配统计语料引擎
+  // 1) 双语料引擎并行产出：
+  //    - CP-generator v2（880 万短句 → 7.45 万词 / 60.5 万组搭配 / 74.6 万条原句，
+  //      评级=整句原样命中优先 + 依存链强度，短句质量极高）
+  //    - SZM 影视字幕依存引擎（多分句、语料清洗、吉言呼应，长串与刁钻组合保底）
+  const cpResults = generateCpPhrases({
+    initA,
+    initB,
+    orderFilter,
+    structureFilter,
+    vibeFilter,
+    allowParticles,
+    allowAdverb,
+    limit,
+  });
+
   const corpusEng = getLoadedCorpusEngine();
-  if (corpusEng) {
-    const corpusResults = corpusEng.generate({
-      initA,
-      initB,
-      orderFilter,
-      structureFilter,
-      vibeFilter,
-      allowParticles,
-      allowAdverb,
-      seed,
-      limit,
-    });
-    if (corpusResults.length >= Math.min(limit, 6)) {
-      return corpusResults;
+  const corpusResults = corpusEng
+    ? corpusEng.generate({
+        initA,
+        initB,
+        orderFilter,
+        structureFilter,
+        vibeFilter,
+        allowParticles,
+        allowAdverb,
+        seed,
+        limit,
+      })
+    : [];
+
+  if (corpusResults.length > 0 || cpResults.length > 0) {
+    const merged = interleaveByTier(cpResults, corpusResults, limit);
+    if (merged.length < Math.min(limit, 6)) {
+      // 极端刁钻组合（如全 o/e）由下方全声母规则引擎补充保底
+      const fallback = generateRuleBasedPhrases(opts);
+      const seen = new Set(merged.map((r) => r.text));
+      for (const f of fallback) {
+        if (merged.length >= limit) break;
+        if (seen.has(f.text)) continue;
+        seen.add(f.text);
+        merged.push({
+          ...f,
+          tier: 0,
+          tierLabel: TIER_META[0].label,
+          tierDesc: TIER_META[0].desc,
+        });
+      }
     }
-    // 极端刁钻组合（如全 o/e）由下方全声母规则引擎补充保底
-    const fallback = generateRuleBasedPhrases(opts);
-    const seen = new Set(corpusResults.map((r) => r.text.replace(/，/g, '')));
-    for (const f of fallback) {
-      if (corpusResults.length >= limit) break;
-      const plain = f.text.replace(/，/g, '');
-      if (seen.has(plain)) continue;
-      seen.add(plain);
-      corpusResults.push({
-        ...f,
-        tier: 0,
-        tierLabel: TIER_META[0].label,
-        tierDesc: TIER_META[0].desc,
-      });
-    }
-    return corpusResults;
+    return merged;
   }
 
   return generateRuleBasedPhrases(opts);
+}
+
+/**
+ * 跨引擎结果合并：严格按评级分层（地道 > 通顺 > 勉强 > 硬凑），
+ * 每层内部两引擎轮流取各自的头部，保证两边的顶级结果都进入前排；按 text 去重。
+ */
+function interleaveByTier(
+  primary: GeneratedPhrase[],
+  secondary: GeneratedPhrase[],
+  limit: number
+): GeneratedPhrase[] {
+  const tiers: QualityTier[] = [3, 2, 1, 0];
+  const out: GeneratedPhrase[] = [];
+  const seen = new Set<string>();
+
+  for (const tier of tiers) {
+    if (out.length >= limit) break;
+    const a = primary.filter((p) => p.tier === tier);
+    const b = secondary.filter((p) => p.tier === tier);
+    const n = Math.max(a.length, b.length);
+    for (let i = 0; i < n && out.length < limit; i++) {
+      for (const p of [a[i], b[i]]) {
+        if (!p) continue;
+        if (out.length >= limit) break;
+        if (seen.has(p.text)) continue;
+        seen.add(p.text);
+        out.push(p);
+      }
+    }
+  }
+  return out;
 }
 
 function generateRuleBasedPhrases(opts: GenerateOptions): GeneratedPhrase[] {
